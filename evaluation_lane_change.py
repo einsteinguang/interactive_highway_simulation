@@ -178,6 +178,6 @@ def plot_lc_statistics():
 
 
 if __name__ == '__main__':
-    # generate_random_lc_traffic()
-    evaluate_recorded_lc_scenes()
+    generate_random_lc_traffic()
+    # evaluate_recorded_lc_scenes()
     # plot_lc_statistics()

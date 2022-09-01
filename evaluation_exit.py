@@ -177,6 +177,6 @@ def plot_exit_statistics():
 
 
 if __name__ == '__main__':
-    # generate_random_exit_traffic()
-    evaluate_recorded_exit_scenes()
+    generate_random_exit_traffic()
+    # evaluate_recorded_exit_scenes()
     # plot_exit_statistics()

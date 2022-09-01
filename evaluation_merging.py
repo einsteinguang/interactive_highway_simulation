@@ -165,6 +165,6 @@ def plot_merging_statistics():
 
 
 if __name__ == '__main__':
-    # generate_random_merging_traffic()
-    evaluate_recorded_merging_scenes()
+    generate_random_merging_traffic()
+    # evaluate_recorded_merging_scenes()
     # plot_merging_statistics()

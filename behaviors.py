@@ -172,37 +172,3 @@ def cloned_exit_behavior(observed_model, agent):
     action = fixedGapMergingBehavior(EnvironmentMS(mcs_map, mcs_agents), agent.id, "right", decision)
     # print(agent.id, debug_features, "q_values: ", q_values, " decision: ", decision)
     return DecoupledAction(action.ax, action.vy, ego_corridor.centerSimplified)
-
-
-def visualize_one_sim_multilane(history, corridors, ego_id, ids, write_gif=False):
-    obj_histories = {}
-    for idx in ids:
-        obj_histories[idx] = [[p.x, p.y, p.v, p.a] for p in history[idx]]
-    # print([p[2] for p in obj_histories[3]])
-    if not plt.fignum_exists(1):
-        fig = plt.figure(figsize=(6.4 * 2, 4.8 * 2))
-        ax = fig.add_subplot(1, 1, 1)
-    else:
-        fig = plt.figure(num=1)
-        ax = fig.axes[0]
-    step = 0
-    for i in range(len(obj_histories[ids[0]])):
-        for c in corridors:
-            plt.plot([c.m.p1.x, c.m.p2.x], [c.m.p1.y, c.m.p2.y], "--", color="b")
-        for idx, obj in obj_histories.items():
-            color = "black"
-            if idx == ego_id:
-                color = "blue"
-            obj_rect = plt.Rectangle((obj[i][0], obj[i][1] - 1), 7, 3, color=color)
-            # ax.annotate(str(idx), (obj[i][0] + 2.5, obj[i][1]), color='white', weight='bold', fontsize=6, ha='center', va='center')
-            ax.annotate(str(round(obj[i][2], 1)), (obj[i][0] + 2.5, obj[i][1]),
-                        color='white', weight='bold', fontsize=6, ha='center', va='center')
-            ax.add_patch(obj_rect)
-        plt.axis('equal')
-        # ax.set_xlim([-10, 250])
-        # ax.set_ylim([-5, 15])
-        plt.draw()
-        plt.pause(0.1)
-        ax.patches = []
-        ax.clear()
-        step += 1
