@@ -74,7 +74,8 @@ right lane.
 
 The learned behaviors and some other behaviors are coded with C++ and ported to python with boost python. The reason to use c++
 is that the learned behavior need to execute hundreds of Monte-Carlo-Simulation in each decision step and is really time-consuming.
-As the paper states, we use multi-thread functionality to speed up the computation. The source code is not ready to be published, but the library is contained in this repository as `mc_sim_highway.so`.
+As the paper states, we use multi-thread functionality to speed up the computation. The source code is available as catkin package here [mc_sim_highway](https://github.com/einsteinguang/mc_sim_highway).
+In case you have build issues with that package, the built library is already provided in this repo as `mc_sim_highway.so`.
 
 # Customizing your own behavior
 
