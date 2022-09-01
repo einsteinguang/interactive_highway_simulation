@@ -56,7 +56,7 @@ merging, exit and lane change models are supported, which are listed below. More
 - `idm`: intelligent driver model. If the agent is locating at the neighboring lane of the merging lane, it will behave cooperative (decelerate) or not,
 the cooperativeness is controlled by the `yielding_param`.
 #### 2. Lane change models
-- `idm_mobil_lane_change`: rule-based MOBIL lane change model, where RSS safety is not guaranteed during lane change.
+- `idm_mobil_lane_change`: rule-based [MOBIL lane change model](https://mtreiber.de/publications/MOBIL_TRB.pdf), where [RSS safety](https://www.mobileye.com/technology/responsibility-sensitive-safety/) is not guaranteed during lane change.
 - `idm_mobil_lane_change_safe`: rule-based MOBIL lane change model, where RSS safety is guaranteed during lane change.
 - `lane_change_learned`: learned lane change model from the paper via Monte-Carlo-Simulation + behavior cloning, where RSS is guaranteed
 #### 3. Merging models
