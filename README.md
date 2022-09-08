@@ -14,6 +14,8 @@ Fig2. Example of one cooperative agent doing a lane change for the convenience o
 
 Create a python3.6 virtual environment and install all the dependencies via `pip install -r requirements.txt`.
 
+Inside the virtual environment, do `cd mc_sim_highway` and `python setup.py install` for installing the precompiled monte-carlo-simulation from c++/boost-python extension.
+
 # Running test simulation
 
 Run `python3 simulation_multilane.py`, its `test_load_scene()` function will be executed, where `agents.yml`
