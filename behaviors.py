@@ -35,7 +35,7 @@ def idm_behavior(observed_model, agent):
                 vehicles_idm_matches.append(observed_model.agent_to_idm_match(agent.id, a[1].id))
 
     for i, v in enumerate(vehicles_idm_matches):
-        p = agent.yielding_model.yielding_probability(v, agent)
+        p = agent.yielding_model.yielding_probability(v, agent, front_idm_match, observed_model, "left")
         # initialize or update intention to others
         if v.id not in agent.yielding_intention_to_others.keys():
             agent.yielding_intention_to_others[vehicles_idm_matches[i].id] = \

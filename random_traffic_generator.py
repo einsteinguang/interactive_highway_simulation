@@ -36,11 +36,13 @@ def random_idm_p_merging(desired_v):
 
 
 def random_yielding_p():
-    a = np.random.normal(-0.5, 0.1)
-    b = np.random.normal(1.81, 0.1)
-    c = np.random.normal(-4.8, 0.2)
-    d = np.random.normal(-1.1, 0.1)
-    return [a, b, c, d]
+    original_parameter = [1.70968573, 0.00582201, 0.40742229, 1.02390871,
+                          -0.32091885, 1.48127062, -0.69499426, -0.34547462,
+                          -0.56578542, -1.911662, -0.03998742, 0.02613949, -0.02392805]
+    randomized_parameter = []
+    for p in original_parameter:
+        randomized_parameter.append(np.random.normal(p, abs(p) * 0.2))
+    return randomized_parameter
 
 
 def random_mobil_p():

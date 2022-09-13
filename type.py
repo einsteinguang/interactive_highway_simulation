@@ -50,10 +50,21 @@ class MOBILParameter:
 
 
 class YieldingFeature:
-    def __init__(self, thw, ttc, acc):
+    def __init__(self, s_diff_kf_f, s_diff_0_k, v_0, d_0_lat, v_0_lat, v_k, v_kf, thw, d_thw,
+                 d_to_merging_lane_end, t_to_merging_lane_end, predicted_remaining_length):
+        self.s_diff_kf_f = s_diff_kf_f  # distance to front vehicle on the main lane
+        self.s_diff_0_k = s_diff_0_k  # distance to merging vehicle, merging vehicle in front: > 0
+        self.v_0 = v_0  # velocity of merging vehicle
+        self.d_0_lat = d_0_lat  # lateral distance merging vehicle to merging border, pass border already: d < 0
+        self.v_0_lat = v_0_lat  # lateral velocity merging vehicle towards border
+        self.v_k = v_k  # ego velocity
+        self.v_kf = v_kf  # ego front velocity
         self.thw = thw  # d / ego_v, represents no unit distance
-        self.ttc = ttc  # (ego_v - obj_v) / ego_v, represents thw changing rate
-        self.acc = acc  # acc of ego, represents wish of ego vehicle to cooperate
+        self.d_thw = d_thw  # (ego_v - obj_v) / ego_v, represents thw changing rate
+        self.d_to_merging_lane_end = d_to_merging_lane_end  # distance to merging lane end of merging vehicle
+        self.t_to_merging_lane_end = t_to_merging_lane_end  # time to merging lane end of merging vehicle
+        # distance ego to merging vehicle when merging vehicle reaches merging lane end with CV
+        self.predicted_remaining_length = predicted_remaining_length
 
 
 class YieldingIntention:
@@ -80,31 +91,50 @@ class YieldingIntention:
 
 
 class YieldingModel:
-    def __init__(self, param=np.array([-0.5, 1.81, -4.8, -1.1])):
+    def __init__(self, param=np.array([1.70968573, 0.00582201, 0.40742229, 1.02390871,
+                                       -0.32091885, 1.48127062, -0.69499426, -0.34547462,
+                                       -0.56578542, -1.911662, -0.03998742, 0.02613949, -0.02392805])):
         self.param = param
 
     def logistic_function(self, f):
         # feature: [thw, tc, acc]
         # prevent OverflowError
-        r = max(min(100, (self.param[0] + self.param[1] * f.thw + self.param[2] * f.ttc + self.param[3] * f.acc)), -100)
+        r = max(min(100, (self.param[0] +
+                          self.param[1] * f.s_diff_kf_f +
+                          self.param[2] * f.s_diff_0_k +
+                          self.param[3] * f.v_0 +
+                          self.param[4] * f.d_0_lat +
+                          self.param[5] * f.v_0_lat +
+                          self.param[6] * f.v_k +
+                          self.param[7] * f.v_kf +
+                          self.param[8] * f.thw +
+                          self.param[9] * f.d_thw +
+                          self.param[10] * f.d_to_merging_lane_end +
+                          self.param[11] * f.t_to_merging_lane_end +
+                          self.param[12] * f.predicted_remaining_length)), -100)
         return 1 / (1 + math.exp(-r))
 
-    def yielding_probability(self, idm_match, ego):
-        # yielding probability of ego to idm match
+    def yielding_probability(self, idm_match, ego, ego_f, env, direction):
+        # direction: merging direction of merging vehicle
+        # yielding probability of ego on main lane to idm match on merging lane
         if idm_match.dis + 0.5 * (ego.l + idm_match.l) < 0:
+            # yielding probability 0 when merging vehicle is complete behind ego vehicle
             return 0.
-        thw, ttc = thw_and_ttc(idm_match.dis - 0.5 * (ego.l + idm_match.l), ego.v, idm_match.v)
-        return self.logistic_function(YieldingFeature(thw, ttc, 0))
-
-
-class EstimatedYieldingModel(YieldingModel):
-    def __init__(self, param):
-        super(EstimatedYieldingModel, self).__init__(param=param)
-
-    def yielding_probability(self, idm_match, ego):
-        # yielding probability of idm match to ego
-        thw, ttc = thw_and_ttc(-idm_match.dis + 0.5 * (ego.l + idm_match.l), idm_match.v, ego.v)
-        return self.logistic_function(YieldingFeature(thw, ttc, idm_match.acc))
+        v_kf = ego_f.v if ego_f else 20
+        v_k = ego.v
+        s_diff_kf_f = ego_f.dis if ego_f else 200
+        s_diff_0_k = idm_match.dis - 0.5 * (ego.l + idm_match.l)
+        v_0 = ego.v
+        d_0_lat = env.dis_to_lane_border(idm_match.id, direction)
+        v_0_lat = idm_match.vy
+        corridor_merging_vehicle = env.corridor_for_agent(idm_match.id)
+        d_to_merging_lane_end = corridor_merging_vehicle.distance_to_corridor_end([idm_match.x, idm_match.y])
+        t_to_merging_lane_end = d_to_merging_lane_end / max(v_0, 0.0001)
+        predicted_remaining_length = d_to_merging_lane_end * (1 - v_k / max(v_0, 0.0001))
+        thw, d_thw = thw_and_ttc(idm_match.dis - 0.5 * (ego.l + idm_match.l), ego.v, idm_match.v)
+        return self.logistic_function(YieldingFeature(s_diff_kf_f, s_diff_0_k, v_0, d_0_lat, v_0_lat,
+                                                      v_k, v_kf, thw, d_thw, d_to_merging_lane_end,
+                                                      t_to_merging_lane_end, predicted_remaining_length))
 
 
 class Corridor:
@@ -151,6 +181,29 @@ class Corridor:
 
     def distance_to_corridor_end(self, position):
         return self.centerSimplified.path_length - self.centerSimplified.project(Point(position))
+
+    def distance_to_border(self, hull, direction):
+        # d < 0 if hull pass border in specified direction, otherwise > 0
+        if direction == "left":
+            pass_border = False
+            max_dis_pass_border = 0.
+            for p in hull:
+                if self.leftSimplified.is_left_of(p):
+                    pass_border = True
+                    max_dis_pass_border = max(self.leftSimplified.path_line.distance(Point(p)), max_dis_pass_border)
+            if pass_border:
+                return -max_dis_pass_border
+            return Polygon(hull).distance(self.leftSimplified.path_line)
+        else:
+            pass_border = False
+            max_dis_pass_border = 0.
+            for p in hull:
+                if not self.rightSimplified.is_left_of(p):
+                    pass_border = True
+                    max_dis_pass_border = max(self.rightSimplified.path_line.distance(Point(p)), max_dis_pass_border)
+            if pass_border:
+                return -max_dis_pass_border
+            return Polygon(hull).distance(self.rightSimplified.path_line)
 
     def get_x_y_limit(self):
         x_min, x_max, y_min, y_max = 1e10, -1e10, 1e10, -1e10

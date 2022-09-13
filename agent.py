@@ -64,7 +64,7 @@ class Agent:
         self.polygon = Polygon(self.hull)
         self.rss_param = RSSParameter()  # TODO: for lane change mobil vehicles use aggressive rss param
         self.idm_param = idm_param
-        self.yielding_param = yielding_param if yielding_param is not None else np.array([-0.5, 1.81, -4.8, -1.1])
+        self.yielding_param = yielding_param
         self.mobil_param = mobil_param
         self.behavior_model = behavior_model  # "idm", "merging"
         self.behavior_model_history = [behavior_model]
@@ -125,10 +125,7 @@ class Agent:
                "mobil_param": {"politeness_factor": float(self.mobil_param.politeness_factor),
                                "delta_a": float(self.mobil_param.delta_a),
                                "bias_a": float(self.mobil_param.bias_a)},
-               "yielding_param": [float(self.yielding_model.param[0]),
-                                  float(self.yielding_model.param[1]),
-                                  float(self.yielding_model.param[2]),
-                                  float(self.yielding_model.param[3])],
+               "yielding_param": [float(p) for p in self.yielding_model.param],
                "behavior_model": self.behavior_model,
                "change_intention_threshold": float(self.change_intention_threshold),
                "random_yielding_seed": int(self.random_yielding_seed)}

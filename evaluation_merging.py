@@ -105,8 +105,8 @@ def evaluate_recorded_merging_scene(path, sim, ego_policy, epoch_id, statistics,
 
 
 def evaluate_recorded_merging_scenes():
-    root_dirs = ["500sim_3lanes_1.6thw_merging_truck", "500sim_3lanes_1.2thw_merging_truck"]
-    param = SimulationParameter(0.2, 100, render=True, write_gif=False, show_debug_info=False, scenario="merging")
+    root_dirs = ["500sims_new_yielding_feature"]
+    param = SimulationParameter(0.2, 100, render=True, write_gif=False, show_debug_info=True, scenario="merging")
     sim = Simulation(None, param)
     for root_dir in root_dirs:
         print_output = ""
@@ -129,8 +129,8 @@ def evaluate_recorded_merging_scenes():
             # statistics_baseline.save(root_dir, "baseline")
             # statistics_learning.save(root_dir, "learning")
             # statistics_learning_02_fb.save(root_dir, "learning_02_fb")
-            with open(os.path.join(root_dir, 'statistics_merging.txt'), 'w') as f:
-                f.write(print_output)
+            # with open(os.path.join(root_dir, 'statistics_merging.txt'), 'w') as f:
+            #     f.write(print_output)
 
 
 def plot_merging_statistics():
@@ -165,6 +165,6 @@ def plot_merging_statistics():
 
 
 if __name__ == '__main__':
-    generate_random_merging_traffic()
-    # evaluate_recorded_merging_scenes()
+    # generate_random_merging_traffic()
+    evaluate_recorded_merging_scenes()
     # plot_merging_statistics()
