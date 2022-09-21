@@ -14,7 +14,7 @@ Fig2. Example of one cooperative agent doing a lane change for the convenience o
 
 Create a python3.6 virtual environment and install all the dependencies via `pip install -r requirements.txt`.
 
-Inside the virtual environment, do `cd mc_sim_highway` and `python setup.py install` for installing the precompiled monte-carlo-simulation from c++/boost-python extension.
+Inside the virtual environment, do `cd mc_sim_highway` and `python setup.py install` for installing the precompiled monte-carlo-simulation from c++/boost-python extension. As the boost python extension is built in python3.6.9 version, please make sure that the virtual environment is built in python3.6.9 as well. Otherwise you might encounter import error.
 
 # Running test simulation
 
