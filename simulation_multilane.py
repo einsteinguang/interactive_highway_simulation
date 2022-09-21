@@ -85,10 +85,10 @@ class Simulation:
                 # self.ax.annotate(agent.current_decision, (agent.x + 5, agent.y + 5),
                 #                  color='red', weight='bold', fontsize=10, ha='center', va='center')
             patch = plt.Polygon(agent.hull, closed=True, fill=True, color=color)
-            # self.ax.annotate(str(agent.id), (agent.x, agent.y),
-            #                  color='white', weight='bold', fontsize=10, ha='center', va='center')
-            self.ax.annotate(str(round(agent.v, 1)) + "m/s", (agent.x, agent.y + 3),
-                             color='red', weight='bold', fontsize=12, ha='center', va='center')
+            self.ax.annotate(str(agent.id), (agent.x, agent.y),
+                             color='white', weight='bold', fontsize=10, ha='center', va='center')
+            # self.ax.annotate(str(round(agent.v, 1)) + "m/s", (agent.x, agent.y + 3),
+            #                  color='red', weight='bold', fontsize=12, ha='center', va='center')
             # self.ax.annotate("vy: " + str(round(agent.vy, 2)) + "m/s", (agent.x, agent.y + 5),
             #                  color='red', weight='bold', fontsize=7, ha='center', va='center')
             if self.param.show_debug_info:
@@ -195,7 +195,7 @@ class Simulation:
             plt.yticks(fontsize=12)
             plt.xlabel(r'$x$(m)', fontsize=15)
             plt.ylabel(r'$y$(m)', fontsize=15)
-            plt.tight_layout()
+            # plt.tight_layout()
             if self.param.write_gif:
                 plt.savefig(os.path.join(write_fig_dir, 'gif_' + str(self.gif_num) + "_" + str(step) + '.png'))
             if self.param.render:

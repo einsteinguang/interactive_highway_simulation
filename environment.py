@@ -110,6 +110,10 @@ class Environment:
         corridor_id = self.matched_agents[idx].corridor_id
         return self.map.corridors[corridor_id]
 
+    def dis_to_lane_border(self, idx, direction):
+        corridor = self.corridor_for_agent(idx)
+        return corridor.distance_to_border(self.matched_agents[idx].agent.hull, direction)
+
     def limit_of_vehicles(self):
         xmin, xmax, ymin, ymax = 1e10, -1e10, 1e10, -1e10
         for i, agent in self.agents.items():

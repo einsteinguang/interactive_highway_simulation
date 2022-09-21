@@ -29,13 +29,15 @@ def idm_behavior(observed_model, agent):
         vehicles = [v for v in vehicles if v is not None]
         vehicles_idm_matches.extend(vehicles)
     # add left exit agents
+    # assuming exiting agents already indicate and can be observed by other vehicles -> exit intention known
     if corridor.left_id is not None and observed_model.map.corridors[corridor.left_id].type == "main":
         for a in observed_model.matched_agents_sorted_by_arc_length[corridor.left_id]:
             if "exit" in a[1].behavior_model:
                 vehicles_idm_matches.append(observed_model.agent_to_idm_match(agent.id, a[1].id))
 
     for i, v in enumerate(vehicles_idm_matches):
-        p = agent.yielding_model.yielding_probability(v, agent)
+        merging_direction = "right" if "exit" in v.agent.behavior_model else "left"
+        p = agent.yielding_model.yielding_probability(v, agent, front_idm_match, observed_model, merging_direction)
         # initialize or update intention to others
         if v.id not in agent.yielding_intention_to_others.keys():
             agent.yielding_intention_to_others[vehicles_idm_matches[i].id] = \
