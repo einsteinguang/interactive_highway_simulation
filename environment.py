@@ -316,7 +316,7 @@ class Environment:
     def step(self, dt):
         observed_env = self
         for _, a in self.agents.items():
-            act = a.plan(observed_env)
+            act = a.plan(observed_env, dt)
             a.step(act, dt)
             self.set_flag(a)
         self.match_agents_on_corridor()

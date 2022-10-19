@@ -90,6 +90,11 @@ class Agent:
         self.commit_keep_lane_step = 0
         self.target_lane_id = -1
 
+        # for MIQP planner
+        self.left_leading_id = -1
+        self.left_following_id = -1
+        self.select_new_target_vehicles = False
+
     def get_position(self):
         return [self.x, self.y]
 
@@ -172,7 +177,7 @@ class Agent:
             c_sum += 1 + abs_acc[i] / (-8.)
         return c_sum / max(int(0.2 * len(abs_acc)), 1)
 
-    def plan(self, observed_env):
+    def plan(self, observed_env, dt):
         if self.behavior_model == "idm":
             return idm_behavior(observed_env, self)
         if self.behavior_model == "idm_mobil_lane_change":
@@ -189,6 +194,8 @@ class Agent:
             return exit_behavior_closest_gap(observed_env, self)
         if self.behavior_model == "exit_learned":
             return cloned_exit_behavior(observed_env, self)
+        if self.behavior_model == "MIQP_merging":
+            return MIQP_merging_behavior(observed_env, self, dt)
 
     def step(self, action, dt):
         if isinstance(action, Trajectory):

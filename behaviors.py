@@ -1,10 +1,17 @@
 import time
+import yaml
 
 from mcs_wrapper import *
 
 from mc_sim_highway import Action, SimParameter, MapMultiLane, Simulation, simulationMultiThread, \
     fixedDirectionLaneChangeBehavior, fixedGapMergingBehavior, closestGapMergingBehavior, laneChangeMobilBehavior
 from mc_sim_highway import Environment as EnvironmentMS
+from interaction_aware_miqp_planner.params import PlannerParams
+from interaction_aware_miqp_planner.planner.planner import Planner
+from interaction_aware_miqp_planner.planner.utils_planner import const_velocity_prediction
+from interaction_aware_miqp_planner.obstacle import Obstacle as MIQPObstacle
+from interaction_aware_miqp_planner.vehicle import Vehicle as MIQPVehicle
+from interaction_aware_miqp_planner.environment_model import EnvModel
 
 
 def idm_behavior(observed_model, agent):
@@ -113,6 +120,95 @@ def lane_change_behavior_learned(observed_model, agent):
 
     action = fixedDirectionLaneChangeBehavior(EnvironmentMS(mcs_map, mcs_agents), agent.id, decision)
     return DecoupledAction(action.ax, action.vy, ego_corridor.centerSimplified)
+
+
+def MIQP_merging_behavior(observed_model, agent, dt):
+    # Important: merging corridor should start at the same longitudinal position as the main corridor
+    vehicle_param = {'id': 0, 'x_min': [0, 0, -4, 1.0, -2, -2], 'x_max': ['GRB.INFINITY', 35, 3, 6.0, 2, 2],
+                     'u_min': [-3, -2], 'u_max': [3, 2], 'Q': [0, 1, 2, 1, 2, 4], 'R': [2, 2], 'W': 1.0,
+                     "dimensions": [agent.l, agent.w]}
+    merge_v = None
+    obstacle = None
+    if (agent.left_leading_id < 0 and agent.left_following_id < 0) or agent.select_new_target_vehicles:
+        neighbor = observed_model.neighbor_around_agent(agent.id)
+        if neighbor.left_b:
+            merge_v = neighbor.left_b.agent
+            agent.left_following_id = merge_v.id
+        if neighbor.left_f:
+            obstacle = neighbor.left_f.agent
+            agent.left_leading_id = obstacle.id
+    else:
+        # TODO: solve when tracked following vehicle changes lane
+        merge_v = observed_model.matched_agents[agent.left_following_id] if agent.left_following_id else None
+        obstacle = observed_model.matched_agents[agent.left_leading_id] if agent.left_leading_id else None
+
+    ego_vehicle = MIQPVehicle(vehicle_param)
+    if merge_v:
+        vehicle_param["dimensions"] = [merge_v.l, merge_v.w]
+    merge_vehicle = MIQPVehicle(vehicle_param)
+    vehicles = [ego_vehicle, merge_vehicle]
+
+    params = PlannerParams()
+    ego_corridor = observed_model.corridor_for_agent(agent.id)
+    ego_arc_l_on_corridor = ego_corridor.centerExtended.project(agent.get_position())
+    ego_y_on_corridor = ego_corridor.centerExtended.signed_distance(agent.get_position())
+    ego_dis_to_corridor_end = ego_corridor.distance_to_corridor_end(agent.get_position())
+    params.x_lane_ending = ego_arc_l_on_corridor + ego_dis_to_corridor_end
+    # TODO: set values
+    params.tau = dt
+    params.N = 40
+    params.tau_sim = 0.2
+    params.x_earliest_merge = 0.
+    params.lane_with = ego_corridor.width
+    cooperation_models = [[1., 1.], [1., 100.]]
+    planner = Planner(params, cooperation_models, vehicles)
+
+    if ego_corridor.left_id is None:
+        print("MIQP: no left lane to merge!")
+
+    main_corridor = observed_model.map.corridors[ego_corridor.left_id]
+
+    ego_ref_v = ego_corridor.v_limit
+    ego_ref_y = ego_corridor.centerSimplified.path_line.distance(main_corridor.centerSimplified.path_line)
+    merge_ref_v = main_corridor.v_limit
+    merge_ref_y = ego_ref_y
+    ego_ref_state = np.array([0, ego_ref_v, 0, ego_ref_y, 0, 0]).reshape(-1, 1)
+    merge_ref_state = np.array([0, merge_ref_v, 0, merge_ref_y, 0, 0]).reshape(-1, 1)
+    ego_ref_input = np.array([0., 0.]).reshape(-1, 1)
+    merge_ref_input = np.array([0., 0.]).reshape(-1, 1)
+
+    x_init_ego = np.array([ego_arc_l_on_corridor, agent.v, 0, ego_y_on_corridor, agent.vy, 0]).reshape(-1, 1)
+    x_init_merge = np.array([0., 0, 0, merge_ref_y, 0, 0]).reshape(-1, 1)
+    if merge_v:
+        merge_arc_l_on_corridor = ego_corridor.centerExtended.project(merge_v.get_position())
+        merge_y_on_corridor = ego_corridor.centerExtended.signed_distance(merge_v.get_position())
+        x_init_merge = np.array([merge_arc_l_on_corridor, merge_v.v, 0, merge_y_on_corridor, merge_v.vy, 0]).reshape(-1, 1)
+
+    planner.initialize([ego_ref_state, merge_ref_state],
+                       [ego_ref_input, merge_ref_input],
+                       [x_init_ego, x_init_merge])
+
+    env_model = EnvModel()
+    env_model.obstacles = []
+    obstacle_params_0 = {"x_0": np.array([1000, 20, ego_corridor.width, 0]).reshape(-1, 1), "dimensions": [5., 2.]}
+    if obstacle:
+        obstacle_arc_l_on_corridor = ego_corridor.centerExtended.project(obstacle.get_position())
+        obstacle_y_on_corridor = ego_corridor.centerExtended.signed_distance(obstacle.get_position())
+        obstacle_params_0 = {"x_0": np.array([obstacle_arc_l_on_corridor, obstacle.v,
+                                              obstacle_y_on_corridor, obstacle.vy]).reshape(-1, 1),
+                             "dimensions": [obstacle.l, obstacle.w]}
+    obstacle_0 = MIQPObstacle(obstacle_params_0)
+    obstacle_0.prediction = const_velocity_prediction(obstacle_0, params.N, params.tau)
+    env_model.obstacles.append(obstacle_0)
+    env_model.ego_state = x_init_ego
+    # create observation of the merge vehicle (observation = real)
+    #  [x, vx, y, vy]
+    observation_merge = np.array([x_init_merge[0], x_init_merge[1], x_init_merge[3], x_init_merge[4]]).reshape(-1, 1)
+    env_model.observation = observation_merge
+
+    ax, vy, select_new_neighbors = planner.run(env_model)
+    agent.select_new_target_vehicles = select_new_neighbors
+    return DecoupledAction(ax, vy, ego_corridor.centerSimplified)
 
 
 def cloned_merging_behavior(observed_model, agent):
