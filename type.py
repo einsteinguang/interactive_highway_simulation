@@ -151,7 +151,7 @@ class Corridor:
         self.leftSimplified = LineSimplified(left)
         self.rightSimplified = LineSimplified(right)
         self.centerSimplified = LineSimplified(center)
-        self.centerExtended = LineString(extend_line(center, 100))
+        self.centerExtended = LineSimplified(extend_line(center, 100))
         self.v_limit = v_limit
         self.length = self.centerSimplified.path_length
         self.width = self.leftLine.distance(self.rightLine)

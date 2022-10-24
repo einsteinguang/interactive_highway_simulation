@@ -6,35 +6,35 @@ def generate_random_merging_traffic():
     sim = Simulation(None, sim_param)
 
     traffic_generator = RandomTrafficGenerator()
-    random_traffic_param = {0: RandomDensityAndVelocityParameter(1.0, 0.1, -2, 2, None, 2),
-                            1: RandomDensityAndVelocityParameter(1.6, 0.4, 0, 2, [0, 400], None),
+    random_traffic_param = {0: RandomDensityAndVelocityParameter(1.0, 0.1, -2, 2, [40, 50], 1),
+                            1: RandomDensityAndVelocityParameter(2.5, 0.4, 0, 2, [0, 400], None),
                             2: RandomDensityAndVelocityParameter(2.0, 1.0, 0, 2, [0, 400], None)}
     ratio_of_unsafe_agents = 0.
     ratio_of_truck = 0.4
-    num_epochs = 500
+    num_epochs = 10
 
     for i in range(num_epochs):
-        v_limit = float(np.random.choice([80 / 3.6, 60 / 3.6, 100 / 3.6], 1)[0])
-        merging_lane_length = v_limit * 3.6 * 2 + 20
+        v_limit = float(np.random.choice([15 / 3.6, 20 / 3.6, 30 / 3.6], 1)[0])
+        merging_lane_length = 120
         merging_corridor = Corridor(0, "merging",
                                     [[0, 3.5], [merging_lane_length + 10, 3.5]],
                                     [[0, 0], [merging_lane_length, 0]],
                                     [[0, 1.75], [merging_lane_length + 5, 1.75]],
                                     v_limit)
         main_corridor = Corridor(1, "main",
-                                 [[-100, 7], [500, 7]],
-                                 [[-100, 3.5], [500, 3.5]],
-                                 [[-100, 5.25], [500, 5.25]],
+                                 [[0, 7], [merging_lane_length + 50, 7]],
+                                 [[0, 3.5], [merging_lane_length + 50, 3.5]],
+                                 [[0, 5.25], [merging_lane_length + 50, 5.25]],
                                  v_limit)
-        main_corridor2 = Corridor(2, "main",
-                                  [[-100, 10.5], [500, 10.5]],
-                                  [[-100, 7], [500, 7]],
-                                  [[-100, 8.75], [500, 8.75]],
-                                  v_limit + 20 / 3.6)
+        # main_corridor2 = Corridor(2, "main",
+        #                           [[0, 10.5], [merging_lane_length + 50, 10.5]],
+        #                           [[0, 7], [merging_lane_length + 50, 7]],
+        #                           [[0, 8.75], [merging_lane_length + 50, 8.75]],
+        #                           v_limit)
         merging_corridor.set_left_and_right_corridor_id(1, None)
-        main_corridor.set_left_and_right_corridor_id(2, 0)
-        main_corridor2.set_left_and_right_corridor_id(None, 1)
-        merging_map = Map([merging_corridor, main_corridor, main_corridor2])
+        main_corridor.set_left_and_right_corridor_id(None, 0)
+        # main_corridor2.set_left_and_right_corridor_id(None, 1)
+        merging_map = Map([merging_corridor, main_corridor])
 
         agents_merging, agents_main = \
             traffic_generator.random_agents_on_map(merging_map, random_traffic_param, ratio_of_unsafe_agents, ratio_of_truck)
@@ -105,8 +105,8 @@ def evaluate_recorded_merging_scene(path, sim, ego_policy, epoch_id, statistics,
 
 
 def evaluate_recorded_merging_scenes():
-    root_dirs = ["500sims_new_yielding_feature"]
-    param = SimulationParameter(0.2, 100, render=True, write_gif=False, show_debug_info=True, scenario="merging")
+    root_dirs = ["MIQP_eval"]
+    param = SimulationParameter(0.1, 500, render=True, write_gif=False, show_debug_info=True, scenario="merging")
     sim = Simulation(None, param)
     for root_dir in root_dirs:
         print_output = ""
@@ -118,12 +118,12 @@ def evaluate_recorded_merging_scenes():
             new_print = "processing epoch" + str(n) + "\n"
             if os.path.isdir(epoch_dir):
                 sim.reset(None, sim.param)
-                new_print += evaluate_recorded_merging_scene(epoch_dir, sim, "merging_closest_gap_policy", n,
+                new_print += evaluate_recorded_merging_scene(epoch_dir, sim, "merging", n,
                                                              statistics_baseline)
-                new_print += evaluate_recorded_merging_scene(epoch_dir, sim, "merging_learned", n,
-                                                             statistics_learning)
-                new_print += evaluate_recorded_merging_scene(epoch_dir, sim, "merging_learned", n,
-                                                             statistics_learning_02_fb, 0.2)
+                # new_print += evaluate_recorded_merging_scene(epoch_dir, sim, "merging_learned", n,
+                #                                              statistics_learning)
+                # new_print += evaluate_recorded_merging_scene(epoch_dir, sim, "merging_learned", n,
+                #                                              statistics_learning_02_fb, 0.2)
                 print(new_print)
                 print_output += new_print
             # statistics_baseline.save(root_dir, "baseline")

@@ -104,7 +104,7 @@ class RandomTrafficGenerator:
             s_range = [max(s_range[0], params.s_range[0]), min(s_range[1], params.s_range[1])]
         if params.num_vehicles:
             num_vehicles = params.num_vehicles
-        x_frenet = np.random.uniform(s_range[0], 0.3 * corridor.v_limit * params.thw_mean)
+        x_frenet = np.random.uniform(s_range[0], s_range[0] + 0.3 * corridor.v_limit * params.thw_mean)
         while x_frenet < s_range[1] and len(vehicles) < num_vehicles:
             y_frenet = np.random.normal(0, 0.2)
             v = np.random.normal(corridor.v_limit + params.mean_v_diff_to_limit, params.v_var)

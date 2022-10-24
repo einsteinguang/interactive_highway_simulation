@@ -1,17 +1,11 @@
-import time
-import yaml
-
-from mcs_wrapper import *
-
-from mc_sim_highway import Action, SimParameter, MapMultiLane, Simulation, simulationMultiThread, \
-    fixedDirectionLaneChangeBehavior, fixedGapMergingBehavior, closestGapMergingBehavior, laneChangeMobilBehavior
-from mc_sim_highway import Environment as EnvironmentMS
 from interaction_aware_miqp_planner.params import PlannerParams
 from interaction_aware_miqp_planner.planner.planner import Planner
 from interaction_aware_miqp_planner.planner.utils_planner import const_velocity_prediction
 from interaction_aware_miqp_planner.obstacle import Obstacle as MIQPObstacle
 from interaction_aware_miqp_planner.vehicle import Vehicle as MIQPVehicle
 from interaction_aware_miqp_planner.environment_model import EnvModel
+
+from type import *
 
 
 def idm_behavior(observed_model, agent):
@@ -66,7 +60,6 @@ def idm_behavior(observed_model, agent):
     if len(yielding_vehicles) > 0:
         ax = min(ax, idm_acc_f_b(yielding_vehicles, None, agent.v, corridor.v_limit,
                                  idm_p_for_merging_exit_agents(agent.random_yielding_seed, agent.idm_param, agent.l>7)))
-
     if front_idm_match and rss_dis(front_idm_match.v, agent.v, agent.rss_param.r_t_ego,
                                    agent.rss_param.a_min, agent.rss_param.a_max) > \
             front_idm_match.dis - 0.5 * (front_idm_match.l + agent.l):
@@ -74,52 +67,131 @@ def idm_behavior(observed_model, agent):
     return DecoupledAction(ax, vy, corridor.centerSimplified)
 
 
-def lane_change_behavior_mobil(observed_model, agent, require_rss_safety):
+def lane_change_behavior_mobil(observed_model, agent):
     # copy from mc simulation
+    keep_decision_step = 5
     ego_corridor = observed_model.corridor_for_agent(agent.id)
     action_idm = idm_behavior(observed_model, agent)
-    corridors, mcs_agents = lane_change_mcs_sim_from_env(observed_model, agent, ego_corridor)
-    for a in mcs_agents:
-        if a.id == agent.id:
-            a.targetLaneId = agent.target_lane_id
-            a.commitToDecision = agent.commit_lane_change
-            a.commitKeepLaneStep = agent.commit_keep_lane_step
-            break
-    action = laneChangeMobilBehavior(EnvironmentMS(MapMultiLane(corridors), mcs_agents),
-                                     agent.id, Action(action_idm.ax, action_idm.vy), require_rss_safety)
-    agent.commit_lane_change = action.commitToDecision
-    agent.commit_keep_lane_step = action.commitKeepLaneStep
-    agent.target_lane_id = action.targetLaneId
-    return DecoupledAction(action.ax, action.vy, ego_corridor.centerSimplified)
-
-
-def lane_change_behavior_learned(observed_model, agent):
-    # manually add cost for lane change: right = +0.02 < keep = 0 < left = -0.02
-    # possible_actions = ["left", "keep_lane", "right", "dcc", "acc"]
-    possible_actions = ["keep_lane", "dcc", "acc"]
-    ego_corridor = observed_model.corridor_for_agent(agent.id)
-    if ego_corridor.left_id and observed_model.map.corridors[ego_corridor.left_id].type == "main":
-        possible_actions.append("left")
-    if ego_corridor.right_id and observed_model.map.corridors[ego_corridor.right_id].type == "main":
-        possible_actions.append("right")
-    corridors, mcs_agents = lane_change_mcs_sim_from_env(observed_model, agent, ego_corridor)
-    sim_param = SimParameter(0.3, 40, 30)
-    mcs_map = MapMultiLane(corridors)
-
-    features = []
-    debug_features = {}
-    for action in possible_actions:
-        feature = simulationMultiThread(20, sim_param, mcs_map, mcs_agents, agent.id, action, -2)
-        f = [feature.successRate, feature.fallBackRate, feature.utility, feature.comfort,
-             feature.expectedStepRatio, feature.utilityObjects, feature.comfortObjects]
-        features.append(f)
-        debug_features[action] = [round(x, 2) for x in f]
-    q_values, decision = agent.learned_lane_change_model.inference(features, possible_actions, agent.current_decision)
-    agent.current_decision = decision
-    # print(debug_features, "q_values: ", q_values, " decision: ", decision)
-
-    action = fixedDirectionLaneChangeBehavior(EnvironmentMS(mcs_map, mcs_agents), agent.id, decision)
-    return DecoupledAction(action.ax, action.vy, ego_corridor.centerSimplified)
+    if agent.commit_lane_change == "keep_lane" and agent.commit_keep_lane_step < keep_decision_step:
+        agent.commit_keep_lane_step += 1
+        return action_idm
+    l_corridor_valid = ego_corridor.left_id is not None and \
+                       observed_model.map.corridors[ego_corridor.left_id].type == "main"
+    r_corridor_valid = ego_corridor.left_id is not None and \
+                       observed_model.map.corridors[ego_corridor.right_id].type == "main"
+    if not l_corridor_valid and r_corridor_valid:
+        agent.commit_keep_lane_step += 1
+        return action_idm
+    p_factor = agent.mobil_param.politeness_factor
+    delta_a = agent.mobil_param.delta_a
+    bias_a = agent.mobil_param.bias_a
+    l_acc_gain, r_acc_gain = -1e10, -1e10
+    change_left_action = action_idm
+    change_right_action = action_idm
+    l_rss_safe, r_rss_safe = True, True
+    a_old_follower, a_old_follower_after_lc = 0., 0.
+    old_follower = observed_model.following_agent(agent.id)
+    old_front = observed_model.front_agent(agent.id)
+    if old_follower:
+        a_old_follower = idm_acc_f_b([observed_model.agent_to_idm_match(old_follower.id, agent.id)], None,
+                                     old_follower.v, old_follower.vd, old_follower.agent.idm_param)
+        a_old_follower_after_lc = idm_acc_f_b([observed_model.agent_to_idm_match(old_front.id, old_follower.id)], None,
+                                              old_follower.v, old_follower.vd, old_follower.agent.idm_param) if \
+            old_front else idm_acc_f_b([], None, old_follower.v, old_follower.vd, old_follower.agent.idm_param)
+    acc_gain_old_follower = a_old_follower_after_lc - a_old_follower
+    if l_corridor_valid:
+        neighbor = observed_model.neighbor_around_agent(agent.id)
+        a_ego_new_l = idm_acc_f_b([], neighbor.left_b, agent.v, agent.idm_param.vd, agent.idm_param)
+        rss_safe_l_f, rss_safe_l_b = True, True
+        if neighbor.left_f:
+            a_ego_new_l = idm_acc_f_b([neighbor.left_f], neighbor.left_b, agent.v, agent.idm_param.vd, agent.idm_param)
+            if neighbor.left_f.dis < rss_dis(neighbor.left_f.v, agent.v, agent.rss_param.r_t_ego,
+                                             agent.rss_param.a_min, agent.rss_param.a_max):
+                rss_safe_l_f = False
+        if neighbor.left_b:
+            if -neighbor.left_b.dis < rss_dis(agent.v, neighbor.left_b.v, agent.rss_param.r_t_ego,
+                                              agent.rss_param.a_min, agent.rss_param.a_max):
+                rss_safe_l_b = False
+        l_rss_safe = rss_safe_l_f and rss_safe_l_b
+        if action_idm.ax != agent.rss_param.a_min:
+            change_left_action.ax = a_ego_new_l
+        change_left_action.vy = min(0.17 * agent.v, 1.)
+        # compute acc gain ego
+        acc_gain_ego = a_ego_new_l - action_idm.ax
+        a_new_follower, a_new_follower_after_lc = 0., 0.
+        if neighbor.left_b:
+            new_follower = neighbor.left_b
+            a_new_follower = idm_acc_f_b([observed_model.agent_to_idm_match(neighbor.left_f.id, new_follower.id)],
+                                         None, new_follower.v, new_follower.vd, new_follower.agent.idm_param) if \
+                neighbor.left_f else idm_acc_f_b([], None, new_follower.v, new_follower.vd, new_follower.agent.idm_param)
+            a_new_follower_after_lc = idm_acc_f_b([observed_model.agent_to_idm_match(agent.id, new_follower.id)],
+                                                  None, new_follower.v, new_follower.vd, new_follower.agent.idm_param)
+            if neighbor.left_f:
+                a_new_follower_after_lc = idm_acc_f_b([observed_model.agent_to_idm_match(agent.id, new_follower.id),
+                                                       observed_model.agent_to_idm_match(neighbor.left_f.id,
+                                                                                         new_follower.id)],
+                                                      None, new_follower.v, new_follower.vd,
+                                                      new_follower.agent.idm_param)
+        acc_gain_new_follower = a_new_follower_after_lc - a_new_follower
+        l_acc_gain = acc_gain_ego + p_factor * (acc_gain_new_follower + acc_gain_old_follower) - delta_a - bias_a
+    if r_corridor_valid:
+        neighbor = observed_model.neighbor_around_agent(agent.id)
+        a_ego_new_r = idm_acc_f_b([], neighbor.right_b, agent.v, agent.idm_param.vd, agent.idm_param)
+        rss_safe_r_f, rss_safe_r_b = True, True
+        if neighbor.right_f:
+            a_ego_new_r = idm_acc_f_b([neighbor.right_f], neighbor.right_b, agent.v, agent.idm_param.vd,
+                                      agent.idm_param)
+            if neighbor.right_f.dis < rss_dis(neighbor.right_f.v, agent.v, agent.rss_param.r_t_ego,
+                                              agent.rss_param.a_min, agent.rss_param.a_max):
+                rss_safe_r_f = False
+        if neighbor.right_b:
+            if -neighbor.right_b.dis < rss_dis(agent.v, neighbor.right_b.v, agent.rss_param.r_t_ego,
+                                               agent.rss_param.a_min, agent.rss_param.a_max):
+                rss_safe_r_b = False
+        r_rss_safe = rss_safe_r_f and rss_safe_r_b
+        if action_idm.ax != agent.rss_param.a_min:
+            change_right_action.ax = a_ego_new_r
+        change_right_action.vy = max(-0.17 * agent.v, -1.)
+        # compute acc gain ego
+        acc_gain_ego = a_ego_new_r - action_idm.ax
+        a_new_follower, a_new_follower_after_lc = 0., 0.
+        if neighbor.right_b:
+            new_follower = neighbor.right_b
+            a_new_follower = idm_acc_f_b([observed_model.agent_to_idm_match(neighbor.right_f.id, new_follower.id)],
+                                         None, new_follower.v, new_follower.vd, new_follower.agent.idm_param) if \
+                neighbor.right_f else idm_acc_f_b([], None, new_follower.v, new_follower.vd, new_follower.agent.idm_param)
+            a_new_follower_after_lc = idm_acc_f_b([observed_model.agent_to_idm_match(agent.id, new_follower.id)],
+                                                  None, new_follower.v, new_follower.vd, new_follower.agent.idm_param)
+            if neighbor.right_f:
+                a_new_follower_after_lc = idm_acc_f_b([observed_model.agent_to_idm_match(agent.id, new_follower.id),
+                                                       observed_model.agent_to_idm_match(neighbor.right_f.id,
+                                                                                         new_follower.id)],
+                                                      None, new_follower.v, new_follower.vd,
+                                                      new_follower.agent.idm_param)
+        acc_gain_new_follower = a_new_follower_after_lc - a_new_follower
+        r_acc_gain = acc_gain_ego + p_factor * (acc_gain_new_follower + acc_gain_old_follower) - delta_a + bias_a
+    if not l_rss_safe:
+        l_acc_gain = -1e10
+    if not r_rss_safe:
+        r_acc_gain = -1e10
+    # commit to lane change as long as it's safe
+    if agent.commit_lane_change == "left" and agent.target_lane_id != ego_corridor.id and l_rss_safe:
+        return change_left_action
+    if agent.commit_lane_change == "right" and agent.target_lane_id != ego_corridor.id and r_rss_safe:
+        return change_right_action
+    # make new decision and commit to it
+    agent.commit_keep_lane_step = 0
+    if l_acc_gain >= r_acc_gain and l_acc_gain > 0.:
+        agent.commit_lane_change = "left"
+        agent.target_lane_id = ego_corridor.left_id
+        return change_left_action
+    if r_acc_gain > l_acc_gain and r_acc_gain > 0.:
+        agent.commit_lane_change = "right"
+        agent.target_lane_id = ego_corridor.right_id
+        return change_right_action
+    agent.commit_lane_change = "keep_lane"
+    agent.target_lane_id = -1
+    return action_idm
 
 
 def MIQP_merging_behavior(observed_model, agent, dt):
@@ -154,10 +226,8 @@ def MIQP_merging_behavior(observed_model, agent, dt):
     ego_y_on_corridor = ego_corridor.centerExtended.signed_distance(agent.get_position())
     ego_dis_to_corridor_end = ego_corridor.distance_to_corridor_end(agent.get_position())
     params.x_lane_ending = ego_arc_l_on_corridor + ego_dis_to_corridor_end
-    # TODO: set values
-    params.tau = dt
     params.N = 40
-    params.tau_sim = 0.2
+    params.tau_sim = dt
     params.x_earliest_merge = 0.
     params.lane_with = ego_corridor.width
     cooperation_models = [[1., 1.], [1., 100.]]
@@ -209,64 +279,3 @@ def MIQP_merging_behavior(observed_model, agent, dt):
     ax, vy, select_new_neighbors = planner.run(env_model)
     agent.select_new_target_vehicles = select_new_neighbors
     return DecoupledAction(ax, vy, ego_corridor.centerSimplified)
-
-
-def cloned_merging_behavior(observed_model, agent):
-    ego_corridor = observed_model.corridor_for_agent(agent.id)
-    corridors, mcs_agents, possible_actions = merging_mcs_sim_from_env(observed_model, agent, ego_corridor)
-    mcs_map = MapMultiLane(corridors)
-    sim_param = SimParameter(0.3, 40, 10)
-    features = []
-    debug_features = {}
-    for gap_id in possible_actions:
-        feature = simulationMultiThread(30, sim_param, mcs_map, mcs_agents, agent.id, "left", gap_id)
-        f = [feature.successRate, feature.fallBackRate, feature.utility, feature.comfort,
-             feature.expectedStepRatio, feature.utilityObjects, feature.comfortObjects]
-        features.append(f)
-        debug_features[gap_id] = [round(x, 4) for x in f]
-
-    action_index, q_values = agent.learned_merging_model.inference(features)
-    decision = possible_actions[action_index]
-    agent.current_decision = decision
-    action = fixedGapMergingBehavior(EnvironmentMS(mcs_map, mcs_agents), agent.id, "left", decision)
-    # print(agent.id, debug_features, "q_values: ", q_values, " decision: ", decision)
-    return DecoupledAction(action.ax, action.vy, ego_corridor.centerSimplified)
-
-
-def merging_behavior_closest_gap(observed_model, agent):
-    # copy from mc simulation
-    ego_corridor = observed_model.corridor_for_agent(agent.id)
-    corridors, mcs_agents, _ = merging_mcs_sim_from_env(observed_model, agent, ego_corridor)
-    action = closestGapMergingBehavior(EnvironmentMS(MapMultiLane(corridors), mcs_agents), agent.id, "left")
-    return DecoupledAction(action.ax, action.vy, ego_corridor.centerSimplified)
-
-
-def exit_behavior_closest_gap(observed_model, agent):
-    # copy from mc simulation
-    ego_corridor = observed_model.corridor_for_agent(agent.id)
-    corridors, mcs_agents, _ = exit_mcs_sim_from_env(observed_model, agent, ego_corridor)
-    action = closestGapMergingBehavior(EnvironmentMS(MapMultiLane(corridors), mcs_agents), agent.id, "right")
-    return DecoupledAction(action.ax, action.vy, ego_corridor.centerSimplified)
-
-
-def cloned_exit_behavior(observed_model, agent):
-    ego_corridor = observed_model.corridor_for_agent(agent.id)
-    corridors, mcs_agents, possible_actions = exit_mcs_sim_from_env(observed_model, agent, ego_corridor)
-    mcs_map = MapMultiLane(corridors)
-    sim_param = SimParameter(0.3, 40, 10)
-
-    features = []
-    debug_features = {}
-    for gap_id in possible_actions:
-        feature = simulationMultiThread(20, sim_param, mcs_map, mcs_agents, agent.id, "right", gap_id)
-        f = [feature.successRate, feature.fallBackRate, feature.utility, feature.comfort,
-             feature.expectedStepRatio, feature.utilityObjects, feature.comfortObjects]
-        features.append(f)
-        debug_features[gap_id] = [round(x, 4) for x in f]
-    action_index, q_values = agent.learned_merging_model.inference(features)
-    decision = possible_actions[action_index]
-
-    agent.current_decision = decision
-    action = fixedGapMergingBehavior(EnvironmentMS(mcs_map, mcs_agents), agent.id, "right", decision)
-    # print(agent.id, debug_features, "q_values: ", q_values, " decision: ", decision)
-    return DecoupledAction(action.ax, action.vy, ego_corridor.centerSimplified)

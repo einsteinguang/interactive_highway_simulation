@@ -1,4 +1,4 @@
-import os, datetime
+import os, datetime, copy
 import imageio
 import yaml
 

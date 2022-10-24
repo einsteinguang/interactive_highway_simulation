@@ -1,5 +1,4 @@
 from agent import *
-from mcs_wrapper import *
 
 
 def check_unique_id(objects):

@@ -1,8 +1,8 @@
-import copy
 import os
 
 from learned_model import *
 from behaviors import *
+from type import *
 
 
 def create_agent_from_dict(data):
@@ -14,8 +14,12 @@ def create_agent_from_dict(data):
     mobil_p = MOBILParameter(data["mobil_param"]["politeness_factor"],
                              data["mobil_param"]["delta_a"],
                              data["mobil_param"]["bias_a"])
-    yielding_p = data["yielding_param"]
+    # yielding_p = data["yielding_param"]
+    yielding_p = np.array([1.70968573, 0.00582201, 0.40742229, 1.02390871, -0.32091885, 1.48127062, -0.69499426,
+                           -0.34547462, -0.56578542, -1.911662, -0.03998742, 0.02613949, -0.02392805])
     behavior_model = data["behavior_model"]
+    if "lane_change" in behavior_model:
+        behavior_model = "idm_mobil_lane_change"
     change_intention_threshold = data["change_intention_threshold"]
     random_yielding_seed = data["random_yielding_seed"]
     agent = Agent(idx, x, y, v, yaw, a, l, w, idm_p, yielding_p, mobil_p,
@@ -180,20 +184,8 @@ class Agent:
     def plan(self, observed_env, dt):
         if self.behavior_model == "idm":
             return idm_behavior(observed_env, self)
-        if self.behavior_model == "idm_mobil_lane_change":
-            return lane_change_behavior_mobil(observed_env, self, False)
-        if self.behavior_model == "idm_mobil_lane_change_safe":
-            return lane_change_behavior_mobil(observed_env, self, True)
-        if self.behavior_model == "merging_learned":
-            return cloned_merging_behavior(observed_env, self)
-        if self.behavior_model == "merging_closest_gap_policy":
-            return merging_behavior_closest_gap(observed_env, self)
-        if self.behavior_model == "lane_change_learned":
-            return lane_change_behavior_learned(observed_env, self)
-        if self.behavior_model == "exit":
-            return exit_behavior_closest_gap(observed_env, self)
-        if self.behavior_model == "exit_learned":
-            return cloned_exit_behavior(observed_env, self)
+        if self.behavior_model == "idm_mobil_lane_change" or self.behavior_model == "idm_mobil_lane_change_safe":
+            return lane_change_behavior_mobil(observed_env, self)
         if self.behavior_model == "MIQP_merging":
             return MIQP_merging_behavior(observed_env, self, dt)
 
